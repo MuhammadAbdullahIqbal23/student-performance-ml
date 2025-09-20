@@ -208,33 +208,110 @@ Top factors influencing student performance:
 
 ## 🔄 CI/CD Pipeline
 
+This project implements a comprehensive CI/CD pipeline with automated testing, Docker containerization, and Jenkins deployment. 
+
+### Pipeline Architecture
+
+```
+Pull Request → GitHub Actions (Tests) → Merge to Master → GitHub Actions (Trigger Jenkins) → Jenkins (Build & Deploy) → Email Notification
+```
+
 ### GitHub Actions Workflows
 
-The project uses GitHub Actions for automated CI/CD pipeline. The workflow includes:
+**Automated Testing (Pull Requests)**:
+- Runs on Python 3.8, 3.9, and 3.10
+- Executes pytest test suite with verbose output
+- Performs flake8 linting with extended configuration
+- Runs pylint code quality analysis
+- Blocks merge if any tests fail
 
-1. **Testing and Linting**:
-   - Runs on Python 3.8 and 3.9
-   - Executes pytest test suite
-   - Performs pylint code quality checks
-   - Runs on every push and pull request
+**Jenkins Trigger (Master Branch)**:
+- Triggers only on master/main branch pushes
+- Calls Jenkins API to start deployment pipeline
+- Passes branch name, commit SHA, and commit message
+- Provides build status feedback
 
-2. **Docker Build and Push**:
-   - Triggers after successful tests
-   - Only runs on push to main branch
-   - Builds Docker image with caching
-   - Pushes to Docker Hub repository
+### Jenkins Pipeline
 
-To set up the workflow:
-1. Add these secrets to your GitHub repository:
-   - `DOCKER_USERNAME`: Your Docker Hub username
-   - `DOCKER_PASSWORD`: Your Docker Hub access token
-2. Ensure your Docker Hub repository exists
-3. The workflow will automatically run on push/PR events
+**Build Process**:
+1. **Checkout**: Retrieves latest code from repository
+2. **Environment Setup**: Configures Docker image naming and tags
+3. **Build**: Creates Docker image with multiple tags (build number, latest, commit SHA)
+4. **Test**: Runs health checks on built container
+5. **Push**: Deploys to Docker Hub with all tags
+6. **Cleanup**: Removes local images and prunes Docker system
+
+**Email Notifications**:
+- **Success**: Detailed build information with Docker Hub links
+- **Failure**: Error details with console output links
+- **Unstable**: Warning notifications for builds with issues
+
+### Setup Requirements
+
+**GitHub Secrets** (Repository Settings → Secrets):
+```
+DOCKERHUB_USERNAME     # Docker Hub username
+DOCKERHUB_TOKEN        # Docker Hub access token
+JENKINS_URL            # Jenkins instance URL
+JENKINS_USER           # Jenkins username
+JENKINS_TOKEN          # Jenkins API token
+JENKINS_JOB_NAME       # Jenkins job name
+```
+
+**Jenkins Credentials**:
+```
+dockerhub-credentials  # Docker Hub username/token
+admin-email-list       # Comma-separated admin emails
+```
+
+**Required Jenkins Plugins**:
+- Docker Pipeline Plugin
+- Email Extension Plugin
+- Pipeline Plugin
+- Git Plugin
+- Credentials Plugin
 
 ### Branch Strategy
-- `dev`: Development branch for new features
-- `test`: Testing branch for PR reviews
-- `master`: Production-ready code
+
+- **dev**: Development branch for new features
+- **feat/***: Feature branches created from dev
+- **master/main**: Production branch (triggers Jenkins deployment)
+
+### Docker Hub Integration
+
+The pipeline publishes Docker images with multiple tags:
+- `latest`: Most recent production build
+- `build-{number}`: Specific build number
+- `{commit-sha}`: Git commit identifier
+
+### Monitoring and Notifications
+
+**GitHub Actions**:
+- View workflow status in repository Actions tab
+- Real-time build logs and failure details
+- Status badges for README display
+
+**Jenkins**:
+- Comprehensive build history and logs
+- Email notifications to administrators
+- Build artifacts and metadata storage
+
+**Email Notifications Include**:
+- Build status and duration
+- Branch and commit information
+- Docker image links and tags
+- Console output for failures
+- Direct links to Jenkins and Docker Hub
+
+### Quick Setup Guide
+
+1. **Configure GitHub Secrets**: Add all required secrets to repository
+2. **Setup Jenkins Job**: Create pipeline job pointing to repository
+3. **Configure Jenkins Credentials**: Add Docker Hub and email credentials
+4. **Test Pipeline**: Create a pull request to verify automated testing
+5. **Deploy**: Merge to master to trigger full deployment pipeline
+
+For detailed setup instructions, see [CI_CD_SETUP.md](CI_CD_SETUP.md)
 
 ## 🛠️ Development
 

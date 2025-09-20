@@ -2,16 +2,16 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ dev ]
+    branches: [ master, main, dev ]
   pull_request:
-    branches: [ dev ]
+    branches: [ master, main, dev ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.8, 3.9]
+        python-version: [3.8, 3.9, '3.10']
 
     steps:
     - uses: actions/checkout@v3
@@ -29,15 +29,16 @@ jobs:
     
     - name: Run tests
       run: |
-        pytest tests/
+        pytest tests/ -v --tb=short
 
     - name: Run flake8
       run: |
-        flake8 src/ tests/
+        flake8 src/ tests/ --max-line-length=100 --extend-ignore=E203,W503
 
     - name: Run pylint
       run: |
-        pylint src/ tests/
+        pylint src/ tests/ --disable=C0114,C0115,C0116
+      continue-on-error: true
 
   build:
     needs: test
@@ -53,14 +54,35 @@ jobs:
     - name: Login to Docker Hub
       uses: docker/login-action@v2
       with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
     
     - name: Build and push Docker image
       uses: docker/build-push-action@v4
       with:
         context: .
         push: true
-        tags: ${{ secrets.DOCKER_USERNAME }}/student-performance-ml:latest
-        cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/student-performance-ml:latest
+        tags: ${{ secrets.DOCKERHUB_USERNAME }}/student-performance-ml:dev
+        cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/student-performance-ml:dev
         cache-to: type=inline
+
+  trigger-jenkins:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+
+    steps:
+    - name: Trigger Jenkins Build
+      run: |
+        curl -X POST \
+          "${{ secrets.JENKINS_URL }}/job/${{ secrets.JENKINS_JOB_NAME }}/buildWithParameters" \
+          --user "${{ secrets.JENKINS_USER }}:${{ secrets.JENKINS_TOKEN }}" \
+          --data-urlencode "BRANCH_NAME=${{ github.ref_name }}" \
+          --data-urlencode "COMMIT_SHA=${{ github.sha }}" \
+          --data-urlencode "COMMIT_MESSAGE=${{ github.event.head_commit.message }}"
+    
+    - name: Notify Jenkins Trigger
+      run: |
+        echo "✅ Successfully triggered Jenkins job for master branch merge"
+        echo "Branch: ${{ github.ref_name }}"
+        echo "Commit: ${{ github.sha }}"

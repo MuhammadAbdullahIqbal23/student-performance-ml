@@ -8,12 +8,16 @@ WORKDIR /app
 ENV PYTHONPATH=/app
 ENV FLASK_APP=src/app.py
 ENV FLASK_ENV=production
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
-    && rm -rf /var/lib/apt/lists/*
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Copy requirements first for better Docker layer caching
 COPY requirements.txt .
