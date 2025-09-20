@@ -5,8 +5,8 @@ pipeline {
         DOCKER_IMAGE = 'student-performance-ml'
         DOCKER_TAG = "${env.BUILD_NUMBER}"
         DOCKER_LATEST = 'latest'
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub-credentials')
-        EMAIL_RECIPIENTS = credentials('admin-email-list')
+        DOCKERHUB_CREDENTIALS = credentials('muhammadabdullahiqbal-dockerhub')
+        EMAIL_RECIPIENTS = credentials('lifedbs20@gmail.com,abdulahiqbal1133@gmail.com')
     }
     
     parameters {
