@@ -64,7 +64,7 @@ jobs:
   # Job 2: Build and trigger Jenkins on master merge
   build-and-deploy:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull-request' && github.ref == 'refs/heads/master'
+    # if: github.event_name == 'pull-request' && github.ref == 'refs/heads/master'
     
     steps:
     - name: Checkout code
