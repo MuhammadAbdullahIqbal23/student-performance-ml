@@ -34,22 +34,51 @@ pipeline {
         stage('Docker Environment Check') {
             steps {
                 script {
-                    echo "🔧 Checking Docker availability on agent"
-                    // We'll detect docker and set an environment flag so later stages can decide what to do
+                    echo "🔧 Checking and setting up Docker environment"
                     try {
                         sh 'docker --version'
-                        // if docker command exists, try docker info to ensure daemon is reachable
-                        try {
-                            sh 'docker info'
-                            echo "✅ Docker is available on this agent"
-                            env.DOCKER_AVAILABLE = 'true'
-                        } catch (Exception exInfo) {
-                            echo "⚠️ Docker CLI present but daemon not reachable: ${exInfo.getMessage()}"
-                            env.DOCKER_AVAILABLE = 'false'
-                        }
+                        echo "✅ Docker is already installed"
                     } catch (Exception e) {
-                        echo "⚠️ Docker CLI not found on this agent: ${e.getMessage()}"
-                        env.DOCKER_AVAILABLE = 'false'
+                        echo "⚙️ Docker not found, installing Docker..."
+                        sh '''
+                            # Update package index
+                            apt-get update
+                            
+                            # Install required packages
+                            apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+                            
+                            # Add Docker's official GPG key
+                            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+                            
+                            # Set up stable repository
+                            echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+                            
+                            # Update package index again
+                            apt-get update
+                            
+                            # Install Docker Engine and curl for health checks
+                            apt-get install -y docker-ce docker-ce-cli containerd.io curl
+                            
+                            # Start Docker service
+                            service docker start
+                            
+                            # Add jenkins user to docker group
+                            usermod -aG docker jenkins || true
+                            
+                            # Verify installation
+                            docker --version
+                            curl --version
+                            
+                            echo "✅ Docker and curl installed successfully"
+                        '''
+                    }
+                    
+                    // Final verification
+                    try {
+                        sh 'docker info'
+                        echo "✅ Docker environment verified successfully"
+                    } catch (Exception e) {
+                        error "❌ Docker installation failed. Error: ${e.getMessage()}"
                     }
                 }
             }
@@ -60,46 +89,25 @@ pipeline {
                 script {
                     echo "🔍 Verifying Docker image availability"
                     
-                    // Check if Docker Hub credentials exist and verify image.
-                    // If Docker is available we'll use the docker client; otherwise fall back to Docker Hub HTTP API.
-                    withCredentials([usernamePassword(credentialsId: '6bfeb15d-259a-4042-8042-0b064c643e50', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                        def imageName = "${DOCKER_USER}/${DOCKER_IMAGE}:${params.DOCKER_IMAGE_TAG}"
-                        if (env.DOCKER_AVAILABLE == 'true') {
-                            echo "🔐 Docker available: using docker client to verify image"
-                            try {
-                                sh '''
-                                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                                '''
-                                sh """
-                                    docker pull ${imageName}
-                                    docker inspect ${imageName}
-                                """
-                                echo "✅ Docker image verified successfully with docker client"
-                            } catch (Exception e) {
-                                error "❌ Failed to verify Docker image with docker client: ${e.getMessage()}"
-                            }
-                        } else {
-                            echo "� Docker not available: using Docker Hub API to verify image manifest"
-                            try {
-                                // Get an access token from Docker Hub
-                                def tokenCmd = "curl -s -u ${DOCKER_USER}:${DOCKER_PASS} \"https://auth.docker.io/token?service=registry.docker.io&scope=repository:${DOCKER_USER}/${DOCKER_IMAGE}:pull\" | sed -n 's/.*\\\"token\\\":\\\"\\\([^\\\"]*\\\)\\\".*/\\1/p'"
-                                def token = sh(script: tokenCmd, returnStdout: true).trim()
-                                if (!token) {
-                                    error "❌ Failed to obtain token from Docker Hub (empty token)"
-                                }
-
-                                def manifestUrl = "https://registry-1.docker.io/v2/${DOCKER_USER}/${DOCKER_IMAGE}/manifests/${params.DOCKER_IMAGE_TAG}"
-                                def statusCmd = "curl -s -o /dev/null -w \"%{http_code}\" -H 'Authorization: Bearer ${token}' -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' ${manifestUrl}"
-                                def status = sh(script: statusCmd, returnStdout: true).trim()
-                                if (status == '200') {
-                                    echo "✅ Docker image manifest exists on Docker Hub (status ${status})"
-                                } else {
-                                    error "❌ Manifest check failed (HTTP ${status}) for ${imageName}"
-                                }
-                            } catch (Exception e) {
-                                error "❌ Failed to verify Docker image via Docker Hub API: ${e.getMessage()}"
-                            }
+                    // Check if Docker Hub credentials exist
+                    try {
+                        withCredentials([usernamePassword(credentialsId: '6bfeb15d-259a-4042-8042-0b064c643e50', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                            // Login to Docker Hub using secure method
+                            sh '''
+                                echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                            '''
+                            
+                            // Pull the image built by GitHub Actions
+                            def imageName = "${DOCKER_USER}/${DOCKER_IMAGE}:${params.DOCKER_IMAGE_TAG}"
+                            
+                            sh """
+                                docker pull ${imageName}
+                                docker inspect ${imageName}
+                            """
+                            echo "✅ Docker image verified successfully"
                         }
+                    } catch (Exception e) {
+                        error "❌ Failed to verify Docker image. Please ensure dockerhub-credentials are configured in Jenkins. Error: ${e.getMessage()}"
                     }
                 }
             }
@@ -110,47 +118,42 @@ pipeline {
                 script {
                     echo "🧪 Testing containerized application"
                     
-                    // If Docker isn't available on the agent, skip runtime container tests
-                    if (env.DOCKER_AVAILABLE == 'true') {
-                        withCredentials([usernamePassword(credentialsId: '6bfeb15d-259a-4042-8042-0b064c643e50', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                            def imageName = "${DOCKER_USER}/${DOCKER_IMAGE}:${params.DOCKER_IMAGE_TAG}"
-                            def containerName = "test-${DOCKER_IMAGE}-${env.BUILD_NUMBER}"
+                    withCredentials([usernamePassword(credentialsId: '6bfeb15d-259a-4042-8042-0b064c643e50', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        def imageName = "${DOCKER_USER}/${DOCKER_IMAGE}:${params.DOCKER_IMAGE_TAG}"
+                        def containerName = "test-${DOCKER_IMAGE}-${env.BUILD_NUMBER}"
+                        
+                        try {
+                            // Run container for testing
+                            sh """
+                                docker run -d --name ${containerName} -p 5001:5000 ${imageName}
+                                sleep 15
+                            """
                             
-                            try {
-                                // Run container for testing
-                                sh """
-                                    docker run -d --name ${containerName} -p 5001:5000 ${imageName}
-                                    sleep 15
-                                """
-                                
-                                // Test health endpoint
-                                sh """
-                                    curl -f http://localhost:5001/health || exit 1
-                                    echo "✅ Health check passed"
-                                """
-                                
-                                // Test prediction endpoint with sample data
-                                sh """
-                                    curl -X POST -H 'Content-Type: application/json' \
-                                        -d '{"age": 18, "gender": "Female", "previous_gpa": 3.5, "study_hours_per_week": 20, "attendance_rate": 85, "parental_education": "Bachelor", "household_income": 50000, "class_size": 25, "has_internet": 1, "has_computer": 1, "school_type": "Public", "sleep_hours": 7, "exercise_hours_per_week": 3, "extracurricular_hours": 5}' \
-                                        http://localhost:5001/predict || exit 1
-                                    echo "✅ Prediction endpoint test passed"
-                                """
-                                
-                                echo "✅ Container testing completed successfully"
-                                
-                            } catch (Exception e) {
-                                error "❌ Container testing failed: ${e.getMessage()}"
-                            } finally {
-                                // Cleanup test container
-                                sh """
-                                    docker stop ${containerName} || true
-                                    docker rm ${containerName} || true
-                                """
-                            }
+                            // Test health endpoint
+                            sh """
+                                curl -f http://localhost:5001/health || exit 1
+                                echo "✅ Health check passed"
+                            """
+                            
+                            // Test prediction endpoint with sample data
+                            sh """
+                                curl -X POST -H "Content-Type: application/json" \\
+                                    -d '{"age": 18, "gender": "Female", "previous_gpa": 3.5, "study_hours_per_week": 20, "attendance_rate": 85, "parental_education": "Bachelor", "household_income": 50000, "class_size": 25, "has_internet": 1, "has_computer": 1, "school_type": "Public", "sleep_hours": 7, "exercise_hours_per_week": 3, "extracurricular_hours": 5}' \\
+                                    http://localhost:5001/predict || exit 1
+                                echo "✅ Prediction endpoint test passed"
+                            """
+                            
+                            echo "✅ Container testing completed successfully"
+                            
+                        } catch (Exception e) {
+                            error "❌ Container testing failed: ${e.getMessage()}"
+                        } finally {
+                            // Cleanup test container
+                            sh """
+                                docker stop ${containerName} || true
+                                docker rm ${containerName} || true
+                            """
                         }
-                    } else {
-                        echo "⚠️ Skipping container runtime tests because Docker is not available on this agent"
                     }
                 }
             }
@@ -161,35 +164,31 @@ pipeline {
                 script {
                     echo "🏷️ Tagging and pushing final production image"
                     
-                    if (env.DOCKER_AVAILABLE == 'true') {
-                        withCredentials([usernamePassword(credentialsId: '6bfeb15d-259a-4042-8042-0b064c643e50', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                            def sourceImage = "${DOCKER_USER}/${DOCKER_IMAGE}:${params.DOCKER_IMAGE_TAG}"
-                            def prodImage = "${DOCKER_USER}/${DOCKER_IMAGE}:production"
-                            def stableImage = "${DOCKER_USER}/${DOCKER_IMAGE}:stable"
+                    withCredentials([usernamePassword(credentialsId: '6bfeb15d-259a-4042-8042-0b064c643e50', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        def sourceImage = "${DOCKER_USER}/${DOCKER_IMAGE}:${params.DOCKER_IMAGE_TAG}"
+                        def prodImage = "${DOCKER_USER}/${DOCKER_IMAGE}:production"
+                        def stableImage = "${DOCKER_USER}/${DOCKER_IMAGE}:stable"
+                        
+                        try {
+                            // Login to Docker Hub for pushing
+                            sh '''
+                                echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                            '''
                             
-                            try {
-                                // Login to Docker Hub for pushing
-                                sh '''
-                                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                                '''
+                            // Tag as production and stable
+                            sh """
+                                docker tag ${sourceImage} ${prodImage}
+                                docker tag ${sourceImage} ${stableImage}
                                 
-                                // Tag as production and stable
-                                sh """
-                                    docker tag ${sourceImage} ${prodImage}
-                                    docker tag ${sourceImage} ${stableImage}
-                                    
-                                    docker push ${prodImage}
-                                    docker push ${stableImage}
-                                """
-                                
-                                echo "✅ Production images pushed successfully"
-                                
-                            } catch (Exception e) {
-                                error "❌ Failed to tag and push production image: ${e.getMessage()}"
-                            }
+                                docker push ${prodImage}
+                                docker push ${stableImage}
+                            """
+                            
+                            echo "✅ Production images pushed successfully"
+                            
+                        } catch (Exception e) {
+                            error "❌ Failed to tag and push production image: ${e.getMessage()}"
                         }
-                    } else {
-                        echo "⚠️ Skipping image tagging/pushing because Docker is not available on this agent"
                     }
                 }
             }
