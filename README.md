@@ -16,7 +16,7 @@ This project is designed for a Machine Learning Operations (MLOps) assignment th
 ## 📊 Dataset Features
 
 The unique synthetic dataset includes the following features to predict student final scores:
-A
+
 ### Student Demographics
 - **age**: Student age (16-25 years)
 - **gender**: Male, Female, or Other
