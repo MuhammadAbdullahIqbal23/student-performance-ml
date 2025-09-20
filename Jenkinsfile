@@ -109,7 +109,7 @@ pipeline {
                 script {
                     echo "Pushing Docker image to Docker Hub..."
                     
-                    docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-credentials') {
+                    docker.withRegistry('https://index.docker.io/v1/', 'muhammadabdullahiqbal-dockerhub') {
                         // Push all tags
                         sh """
                             docker push ${env.IMAGE_TAG_BUILD}

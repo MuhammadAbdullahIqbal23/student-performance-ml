@@ -69,7 +69,9 @@ jobs:
   trigger-jenkins:
     needs: test
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    if: |
+      (github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')) ||
+      (github.event_name == 'pull_request' && (github.base_ref == 'master' || github.base_ref == 'main'))
 
     steps:
     - name: Trigger Jenkins Build
@@ -79,10 +81,12 @@ jobs:
           --user "${{ secrets.JENKINS_USER }}:${{ secrets.JENKINS_TOKEN }}" \
           --data-urlencode "BRANCH_NAME=${{ github.ref_name }}" \
           --data-urlencode "COMMIT_SHA=${{ github.sha }}" \
-          --data-urlencode "COMMIT_MESSAGE=${{ github.event.head_commit.message }}"
+          --data-urlencode "COMMIT_MESSAGE=${{ github.event.head_commit.message || github.event.commits[0].message }}"
     
     - name: Notify Jenkins Trigger
       run: |
-        echo "✅ Successfully triggered Jenkins job for master branch merge"
+        echo "✅ Successfully triggered Jenkins job"
+        echo "Event: ${{ github.event_name }}"
         echo "Branch: ${{ github.ref_name }}"
+        echo "Base Branch: ${{ github.base_ref }}"
         echo "Commit: ${{ github.sha }}"
