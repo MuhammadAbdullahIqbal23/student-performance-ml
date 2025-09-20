@@ -9,8 +9,8 @@ services:
       - FLASK_ENV=production
       - PYTHONPATH=/app
     volumes:
-      - ./models:/app/models
-      - ./data:/app/data
+      - ./models:/app/models:ro
+      - ./data:/app/data:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
@@ -18,3 +18,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
