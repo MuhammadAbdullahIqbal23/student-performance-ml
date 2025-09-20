@@ -1,3 +1,4 @@
+
 # Student Performance Prediction ML Project
 
 A comprehensive machine learning project that predicts student academic performance using regression models. This project includes a unique synthetic dataset, trained ML models, a Flask web API, and a complete CI/CD pipeline setup.
