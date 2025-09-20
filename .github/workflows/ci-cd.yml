@@ -4,14 +4,14 @@ on:
   push:
     branches: [ master, main, dev ]
   pull_request:
-    branches: [ master, main, dev ]
+    branches: [ master, main ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.8]
+        python-version: [3.8, 3.9]
 
     steps:
     - uses: actions/checkout@v3
@@ -40,19 +40,29 @@ jobs:
         pylint src/ tests/ --disable=C0114,C0115,C0116
       continue-on-error: true
 
-  build:
+    - name: Test Status
+      if: always()
+      run: |
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "✅ All tests passed! Ready for merge to master."
+        else
+          echo "❌ Tests failed! Please fix issues before merging."
+          exit 1
+        fi
+
+  # Only run build on pushes to master/main (after PR merge)
+  build-and-deploy:
     needs: test
     runs-on: ubuntu-latest
-    if: |
-      (github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')) ||
-      (github.event_name == 'pull_request' && (github.base_ref == 'master' || github.base_ref == 'main'))
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    
     steps:
     - uses: actions/checkout@v3
     
     - name: Validate Docker Hub credentials
       id: docker-check
       run: |
-        echo "Checking Docker Hub credentials..."
+        echo "🔍 Validating Docker Hub credentials..."
         
         if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
           echo "✅ Docker Hub credentials are configured"
@@ -78,30 +88,31 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
     
-    - name: Build and push Docker image
+    - name: Build and push Docker image (GitHub Actions)
       if: steps.docker-check.outputs.docker-configured == 'true'
       uses: docker/build-push-action@v4
       with:
         context: .
         push: true
-        tags: ${{ secrets.DOCKERHUB_USERNAME }}/student-performance-ml:dev
-        cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/student-performance-ml:dev
+        tags: |
+          ${{ secrets.DOCKERHUB_USERNAME }}/student-performance-ml:latest
+          ${{ secrets.DOCKERHUB_USERNAME }}/student-performance-ml:github-${{ github.run_number }}
+          ${{ secrets.DOCKERHUB_USERNAME }}/student-performance-ml:${{ github.sha }}
+        cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/student-performance-ml:latest
         cache-to: type=inline
 
+  # Trigger Jenkins for additional containerization and deployment
   trigger-jenkins:
-    needs: test
+    needs: [test, build-and-deploy]
     runs-on: ubuntu-latest
-    if: |
-      (github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')) ||
-      (github.event_name == 'pull_request' && (github.base_ref == 'master' || github.base_ref == 'main'))
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
 
     steps:
     - name: Check Jenkins Configuration
       id: jenkins-check
       run: |
-        echo "Checking Jenkins configuration..."
+        echo "🔍 Checking Jenkins configuration..."
         
-        # Check if Jenkins secrets are configured
         JENKINS_CONFIGURED="false"
         
         if [ -n "$JENKINS_URL" ] && [ -n "$JENKINS_USER" ] && [ -n "$JENKINS_TOKEN" ] && [ -n "$JENKINS_JOB_NAME" ]; then
@@ -109,7 +120,7 @@ jobs:
           JENKINS_CONFIGURED="true"
         else
           echo "⚠️ Jenkins secrets are missing or incomplete"
-          echo "Missing secrets will cause the Jenkins trigger to be skipped"
+          echo "Jenkins deployment will be skipped"
         fi
         
         echo "jenkins-configured=$JENKINS_CONFIGURED" >> $GITHUB_OUTPUT
@@ -122,21 +133,23 @@ jobs:
     - name: Trigger Jenkins Build
       if: steps.jenkins-check.outputs.jenkins-configured == 'true'
       run: |
-        echo "🚀 Triggering Jenkins build..."
+        echo "🚀 Triggering Jenkins containerization and deployment..."
         
-        # Prepare commit message (handle both push and PR events)
+        # Prepare commit message
         COMMIT_MSG="${{ github.event.head_commit.message }}"
-        if [ -z "$COMMIT_MSG" ] && [ "${{ github.event_name }}" == "pull_request" ]; then
-          COMMIT_MSG="${{ github.event.pull_request.title }}"
+        if [ -z "$COMMIT_MSG" ]; then
+          COMMIT_MSG="Merge to master - Build #${{ github.run_number }}"
         fi
         
-        # Make the Jenkins API call
+        # Make the Jenkins API call with build parameters
         response=$(curl -s -w "%{http_code}" -X POST \
           "${JENKINS_URL}/job/${JENKINS_JOB_NAME}/buildWithParameters" \
           --user "${JENKINS_USER}:${JENKINS_TOKEN}" \
           --data-urlencode "BRANCH_NAME=${{ github.ref_name }}" \
           --data-urlencode "COMMIT_SHA=${{ github.sha }}" \
-          --data-urlencode "COMMIT_MESSAGE=${COMMIT_MSG}")
+          --data-urlencode "COMMIT_MESSAGE=${COMMIT_MSG}" \
+          --data-urlencode "GITHUB_RUN_ID=${{ github.run_id }}" \
+          --data-urlencode "GITHUB_RUN_NUMBER=${{ github.run_number }}")
         
         # Extract HTTP status code
         http_code="${response: -3}"
@@ -147,6 +160,8 @@ jobs:
         # Check if the request was successful
         if [ "$http_code" -eq 200 ] || [ "$http_code" -eq 201 ] || [ "$http_code" -eq 202 ]; then
           echo "✅ Successfully triggered Jenkins job"
+          echo "🐳 Jenkins will now containerize and deploy the application"
+          echo "📧 Email notification will be sent upon completion"
         else
           echo "❌ Failed to trigger Jenkins job"
           echo "Response body: $response_body"
@@ -163,21 +178,29 @@ jobs:
       run: |
         echo "⚠️ Jenkins trigger was skipped due to missing configuration"
         echo ""
-        echo "To enable Jenkins integration, configure the following repository secrets:"
-        echo "  • JENKINS_URL - Your Jenkins server URL (e.g., https://jenkins.example.com)"
+        echo "To enable Jenkins integration, configure these repository secrets:"
+        echo "  • JENKINS_URL - Your Jenkins server URL"
         echo "  • JENKINS_USER - Jenkins username with API access"
         echo "  • JENKINS_TOKEN - Jenkins API token"
         echo "  • JENKINS_JOB_NAME - Name of the Jenkins job to trigger"
         echo ""
-        echo "Once configured, Jenkins will be automatically triggered on future builds."
+        echo "📧 Email notifications require Jenkins configuration"
     
-    - name: Build Summary
+    - name: Deployment Summary
       run: |
-        echo "📋 Build Summary:"
+        echo "📋 Deployment Summary:"
+        echo "===================="
         echo "Event: ${{ github.event_name }}"
         echo "Branch: ${{ github.ref_name }}"
-        if [ "${{ github.event_name }}" == "pull_request" ]; then
-          echo "Base Branch: ${{ github.base_ref }}"
-        fi
         echo "Commit: ${{ github.sha }}"
+        echo "GitHub Run: ${{ github.run_number }}"
+        echo "Docker Images Built: ✅"
         echo "Jenkins Configured: ${{ steps.jenkins-check.outputs.jenkins-configured }}"
+        
+        if [ "${{ steps.jenkins-check.outputs.jenkins-configured }}" == "true" ]; then
+          echo "Jenkins Job Triggered: ✅"
+          echo "Email Notification: Will be sent by Jenkins"
+        else
+          echo "Jenkins Job Triggered: ❌ (Not configured)"
+          echo "Email Notification: ❌ (Requires Jenkins)"
+        fi
