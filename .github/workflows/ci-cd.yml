@@ -11,7 +11,7 @@ jobs:
   # Job 1: Run tests on pull requests
   test:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    # if: github.event_name == 'pull_request'
     
     steps:
     - name: Checkout code
