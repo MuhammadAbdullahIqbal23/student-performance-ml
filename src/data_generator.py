@@ -3,10 +3,10 @@ Student Performance Dataset Generator
 Creates a unique synthetic dataset for predicting student academic performance.
 """
 
+import os
+
 import numpy as np
 import pandas as pd
-# from datetime import datetime  # unused import
-import os
 
 
 class StudentDataGenerator:
@@ -24,7 +24,7 @@ class StudentDataGenerator:
         self.random_seed = random_seed
         np.random.seed(random_seed)
 
-    def generate_dataset(self):
+    def generate_dataset(self):  # pylint: disable=too-many-locals
         """
         Generate a comprehensive student performance dataset.
 

@@ -2,13 +2,14 @@
 Unit tests for the Student Performance Prediction project.
 """
 
-import unittest
-import pandas as pd
-import numpy as np
 import os
 import sys
 import tempfile
+import unittest
 from unittest.mock import patch
+
+import pandas as pd
+import numpy as np
 
 # Add src directory to path
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src'))
@@ -147,18 +148,18 @@ class TestStudentPerformanceModel(unittest.TestCase):
     def test_prepare_features(self):
         """Test feature preparation."""
         processed_data = self.model.preprocess_data(self.sample_data)
-        X, y = self.model.prepare_features(processed_data)
+        features_x, target_y = self.model.prepare_features(processed_data)
 
         # Check shapes
-        self.assertEqual(len(X), len(self.sample_data))
-        self.assertEqual(len(y), len(self.sample_data))
+        self.assertEqual(len(features_x), len(self.sample_data))
+        self.assertEqual(len(target_y), len(self.sample_data))
 
         # Check if student_id and target are excluded from features
-        self.assertNotIn('student_id', X.columns)
-        self.assertNotIn('final_score', X.columns)
+        self.assertNotIn('student_id', features_x.columns)
+        self.assertNotIn('final_score', features_x.columns)
 
         # Check if target values are correct
-        np.testing.assert_array_equal(y.values, self.sample_data['final_score'].values)
+        np.testing.assert_array_equal(target_y.values, self.sample_data['final_score'].values)
 
     def test_train_linear_model(self):
         """Test linear model training."""
@@ -349,5 +350,5 @@ if __name__ == '__main__':
     result = runner.run(test_suite)
 
     # Exit with appropriate code
-    exit_code = 0 if result.wasSuccessful() else 1
-    sys.exit(exit_code)
+    EXIT_CODE = 0 if result.wasSuccessful() else 1
+    sys.exit(EXIT_CODE)

@@ -3,6 +3,9 @@ Student Performance Regression Model
 Machine Learning model to predict student academic performance.
 """
 
+import os
+from datetime import datetime
+
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -11,8 +14,6 @@ from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 import joblib
-import os
-from datetime import datetime
 
 
 class StudentPerformanceModel:
@@ -71,10 +72,10 @@ class StudentPerformanceModel:
         if self.feature_columns is None:
             self.feature_columns = [col for col in data.columns if col not in exclude_columns]
 
-        X = data[self.feature_columns]
-        y = data[self.target_column] if self.target_column in data.columns else None
+        features_x = data[self.feature_columns]
+        target_y = data[self.target_column] if self.target_column in data.columns else None
 
-        return X, y
+        return features_x, target_y
 
     def train(self, data, model_type='random_forest'):
         """
@@ -86,22 +87,40 @@ class StudentPerformanceModel:
         """
         print("Starting model training...")
 
-        # Preprocess data
+        # Prepare data
+        train_data, _ = self._prepare_training_data(data)
+
+        # Initialize and train model
+        self._initialize_model(model_type)
+        y_pred = self._train_model(train_data, model_type)
+
+        # Evaluate and store results
+        self._evaluate_model(train_data, y_pred, model_type)
+
+        # Handle feature importance for Random Forest
+        if model_type == 'random_forest':
+            self._store_feature_importance()
+
+    def _prepare_training_data(self, data):
+        """Prepare and split training data."""
         processed_data = self.preprocess_data(data)
+        features_x, target_y = self.prepare_features(processed_data)
 
-        # Prepare features
-        X, y = self.prepare_features(processed_data)
-
-        # Split data
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42
+        x_train, x_test, y_train, y_test = train_test_split(
+            features_x, target_y, test_size=0.2, random_state=42
         )
 
-        # Scale features
-        X_train_scaled = self.scaler.fit_transform(X_train)
-        X_test_scaled = self.scaler.transform(X_test)
+        x_train_scaled = self.scaler.fit_transform(x_train)
+        x_test_scaled = self.scaler.transform(x_test)
 
-        # Initialize model
+        return {
+            'x_train': x_train, 'x_test': x_test,
+            'y_train': y_train, 'y_test': y_test,
+            'x_train_scaled': x_train_scaled, 'x_test_scaled': x_test_scaled
+        }, {}
+
+    def _initialize_model(self, model_type):
+        """Initialize the model based on type."""
         if model_type == 'linear':
             self.model = LinearRegression()
         else:
@@ -112,50 +131,50 @@ class StudentPerformanceModel:
                 min_samples_split=5
             )
 
-        # Train model
+    def _train_model(self, train_data, model_type):
+        """Train the model and return predictions."""
         if model_type == 'linear':
-            self.model.fit(X_train_scaled, y_train)
-            y_pred = self.model.predict(X_test_scaled)
-        else:
-            self.model.fit(X_train, y_train)
-            y_pred = self.model.predict(X_test)
+            self.model.fit(train_data['x_train_scaled'], train_data['y_train'])
+            return self.model.predict(train_data['x_test_scaled'])
 
-        # Evaluate model
-        mse = mean_squared_error(y_test, y_pred)
-        rmse = np.sqrt(mse)
-        mae = mean_absolute_error(y_test, y_pred)
-        r2 = r2_score(y_test, y_pred)
+        self.model.fit(train_data['x_train'], train_data['y_train'])
+        return self.model.predict(train_data['x_test'])
 
-        # Store metrics
-        self.model_metrics = {
-            'mse': mse,
-            'rmse': rmse,
-            'mae': mae,
-            'r2_score': r2,
+    def _evaluate_model(self, train_data, y_pred, model_type):
+        """Evaluate model and store metrics."""
+        y_test = train_data['y_test']
+
+        metrics = {
+            'mse': mean_squared_error(y_test, y_pred),
+            'rmse': np.sqrt(mean_squared_error(y_test, y_pred)),
+            'mae': mean_absolute_error(y_test, y_pred),
+            'r2_score': r2_score(y_test, y_pred),
             'model_type': model_type,
             'training_date': datetime.now().isoformat(),
-            'train_size': len(X_train),
-            'test_size': len(X_test)
+            'train_size': len(train_data['x_train']),
+            'test_size': len(train_data['x_test'])
         }
+
+        self.model_metrics = metrics
 
         print("Model Training Complete!")
         print(f"Model Type: {model_type}")
-        print(f"Mean Squared Error: {mse:.4f}")
-        print(f"Root Mean Squared Error: {rmse:.4f}")
-        print(f"Mean Absolute Error: {mae:.4f}")
-        print(f"R² Score: {r2:.4f}")
+        print(f"Mean Squared Error: {metrics['mse']:.4f}")
+        print(f"Root Mean Squared Error: {metrics['rmse']:.4f}")
+        print(f"Mean Absolute Error: {metrics['mae']:.4f}")
+        print(f"R² Score: {metrics['r2_score']:.4f}")
 
-        # Feature importance for Random Forest
-        if model_type == 'random_forest':
-            feature_importance = pd.DataFrame({
-                'feature': self.feature_columns,
-                'importance': self.model.feature_importances_
-            }).sort_values('importance', ascending=False)
+    def _store_feature_importance(self):
+        """Store feature importance for Random Forest models."""
+        feature_importance = pd.DataFrame({
+            'feature': self.feature_columns,
+            'importance': self.model.feature_importances_
+        }).sort_values('importance', ascending=False)
 
-            print("\nTop 10 Most Important Features:")
-            print(feature_importance.head(10))
+        print("\nTop 10 Most Important Features:")
+        print(feature_importance.head(10))
 
-            self.model_metrics['feature_importance'] = feature_importance.to_dict('records')
+        self.model_metrics['feature_importance'] = feature_importance.to_dict('records')
 
     def predict(self, data):
         """
@@ -174,14 +193,14 @@ class StudentPerformanceModel:
         processed_data = self.preprocess_data(data)
 
         # Prepare features
-        X, _ = self.prepare_features(processed_data)
+        features_x, _ = self.prepare_features(processed_data)
 
         # Scale features if using linear regression
         if isinstance(self.model, LinearRegression):
-            X = self.scaler.transform(X)
+            features_x = self.scaler.transform(features_x)
 
         # Make predictions
-        predictions = self.model.predict(X)
+        predictions = self.model.predict(features_x)
 
         return predictions
 
@@ -265,7 +284,8 @@ def main():
 
     if not os.path.exists(data_path):
         print("Dataset not found. Generating dataset...")
-        from data_generator import StudentDataGenerator
+        # Import here to avoid circular imports
+        from data_generator import StudentDataGenerator  # pylint: disable=import-outside-toplevel
         generator = StudentDataGenerator(num_students=500)
         data = generator.generate_dataset()
         generator.save_dataset(data)
