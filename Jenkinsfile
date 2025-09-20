@@ -31,6 +31,59 @@ pipeline {
             }
         }
         
+        stage('Docker Environment Check') {
+            steps {
+                script {
+                    echo "🔧 Checking and setting up Docker environment"
+                    try {
+                        sh 'docker --version'
+                        echo "✅ Docker is already installed"
+                    } catch (Exception e) {
+                        echo "⚙️ Docker not found, installing Docker..."
+                        sh '''
+                            # Update package index
+                            apt-get update
+                            
+                            # Install required packages
+                            apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+                            
+                            # Add Docker's official GPG key
+                            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+                            
+                            # Set up stable repository
+                            echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+                            
+                            # Update package index again
+                            apt-get update
+                            
+                            # Install Docker Engine and curl for health checks
+                            apt-get install -y docker-ce docker-ce-cli containerd.io curl
+                            
+                            # Start Docker service
+                            service docker start
+                            
+                            # Add jenkins user to docker group
+                            usermod -aG docker jenkins || true
+                            
+                            # Verify installation
+                            docker --version
+                            curl --version
+                            
+                            echo "✅ Docker and curl installed successfully"
+                        '''
+                    }
+                    
+                    // Final verification
+                    try {
+                        sh 'docker info'
+                        echo "✅ Docker environment verified successfully"
+                    } catch (Exception e) {
+                        error "❌ Docker installation failed. Error: ${e.getMessage()}"
+                    }
+                }
+            }
+        }
+        
         stage('Verify Docker Image') {
             steps {
                 script {
@@ -39,10 +92,10 @@ pipeline {
                     // Check if Docker Hub credentials exist
                     try {
                         withCredentials([usernamePassword(credentialsId: '6bfeb15d-259a-4042-8042-0b064c643e50', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                            // Login to Docker Hub
-                            sh """
-                                echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
-                            """
+                            // Login to Docker Hub using secure method
+                            sh '''
+                                echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                            '''
                             
                             // Pull the image built by GitHub Actions
                             def imageName = "${DOCKER_USER}/${DOCKER_IMAGE}:${params.DOCKER_IMAGE_TAG}"
@@ -117,6 +170,11 @@ pipeline {
                         def stableImage = "${DOCKER_USER}/${DOCKER_IMAGE}:stable"
                         
                         try {
+                            // Login to Docker Hub for pushing
+                            sh '''
+                                echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                            '''
+                            
                             // Tag as production and stable
                             sh """
                                 docker tag ${sourceImage} ${prodImage}
@@ -160,10 +218,13 @@ pipeline {
     post {
         always {
             script {
-                // Cleanup Docker images to save space
-                sh """
-                    docker system prune -f
-                """
+                // Cleanup Docker images to save space (only if Docker is available)
+                try {
+                    sh 'docker system prune -f'
+                    echo "✅ Docker cleanup completed"
+                } catch (Exception e) {
+                    echo "⚠️ Docker cleanup skipped - Docker not available: ${e.getMessage()}"
+                }
             }
         }
         
