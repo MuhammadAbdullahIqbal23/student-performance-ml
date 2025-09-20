@@ -5,8 +5,9 @@ pipeline {
         DOCKER_IMAGE = 'student-performance-ml'
         DOCKER_TAG = "${env.BUILD_NUMBER}"
         DOCKER_LATEST = 'latest'
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub-credentials')
-        EMAIL_RECIPIENTS = credentials('admin-email-list')
+        // Using your specific credential ID
+        DOCKERHUB_CREDENTIALS = credentials('muhammadabdullahiqbal-dockerhub')
+        EMAIL_RECIPIENTS = credentials('notification-emails')    // Change this ID if needed
     }
     
     parameters {
@@ -109,7 +110,7 @@ pipeline {
                 script {
                     echo "Pushing Docker image to Docker Hub..."
                     
-                    docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-credentials') {
+                    docker.withRegistry('https://index.docker.io/v1/', 'muhammadabdullahiqbal-dockerhub') {
                         // Push all tags
                         sh """
                             docker push ${env.IMAGE_TAG_BUILD}
