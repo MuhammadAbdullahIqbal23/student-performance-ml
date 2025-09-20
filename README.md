@@ -5,6 +5,7 @@ A comprehensive machine learning project that predicts student academic performa
 
 ## 🎯 Project Overview
 
+
 This project is designed for a Machine Learning Operations (MLOps) assignment that demonstrates:
 - **Unique Dataset Creation**: Synthetic student performance data with 15+ features
 - **Regression Modeling**: Multiple algorithms (Linear Regression, Random Forest)
