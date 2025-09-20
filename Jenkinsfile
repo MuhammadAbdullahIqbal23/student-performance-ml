@@ -159,13 +159,11 @@ pipeline {
     
     post {
         always {
-            node {
-                script {
-                    // Cleanup Docker images to save space
-                    sh """
-                        docker system prune -f
-                    """
-                }
+            script {
+                // Cleanup Docker images to save space
+                sh """
+                    docker system prune -f
+                """
             }
         }
         
@@ -175,7 +173,7 @@ pipeline {
                 
                 // Check if email credentials exist before sending
                 try {
-                    def emailList = env.NOTIFICATION_EMAIL ?: 'admin@example.com'
+                    def emailList = env.NOTIFICATION_EMAIL ?: 'abdullahiqbal1133@gmail.com'
                     
                     // Send success email notification
                     emailext (
@@ -240,7 +238,7 @@ pipeline {
                 
                 // Check if email credentials exist before sending
                 try {
-                    def emailList = env.NOTIFICATION_EMAIL ?: 'admin@example.com'
+                    def emailList = env.NOTIFICATION_EMAIL ?: 'abdullahiqbal1133@gmail.com'
                     
                     // Send failure email notification
                     emailext (
@@ -299,7 +297,7 @@ pipeline {
                 
                 // Check if email credentials exist before sending
                 try {
-                    def emailList = env.NOTIFICATION_EMAIL ?: 'admin@example.com'
+                    def emailList = env.NOTIFICATION_EMAIL ?: 'abdullahiqbal1133@gmail.com'
                     
                     // Send warning email notification
                     emailext (
