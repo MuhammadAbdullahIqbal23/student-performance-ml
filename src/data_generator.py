@@ -31,6 +31,9 @@ class StudentDataGenerator:
         Returns:
             pd.DataFrame: Generated student performance data
         """
+        # Reset random seed to ensure reproducibility
+        np.random.seed(self.random_seed)
+        
         # Basic demographic information
         student_ids = [f"STU{str(i).zfill(4)}" for i in range(1, self.num_students + 1)]
         ages = np.random.normal(18.5, 1.5, self.num_students).clip(16, 25).astype(int)

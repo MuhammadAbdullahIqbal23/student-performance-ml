@@ -87,6 +87,12 @@ class TestStudentDataGenerator(unittest.TestCase):
                 
                 # Load and verify saved data
                 loaded_data = pd.read_csv(filepath)
+                
+                # Convert data types to match original (CSV loading can change dtypes)
+                for col in dataset.columns:
+                    if dataset[col].dtype != loaded_data[col].dtype:
+                        loaded_data[col] = loaded_data[col].astype(dataset[col].dtype)
+                
                 pd.testing.assert_frame_equal(dataset, loaded_data)
 
 
