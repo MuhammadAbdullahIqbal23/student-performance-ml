@@ -79,7 +79,31 @@ python app.py
 
 The API will be available at `http://localhost:5000`
 
-## 🐳 Docker Deployment
+## � CI/CD Pipeline
+
+This project includes a complete CI/CD pipeline with GitHub Actions and Jenkins integration:
+
+### Pipeline Flow
+```
+Pull Request → GitHub Actions (Tests) → Merge to Master → Build & Push Docker → Trigger Jenkins → Deploy & Notify
+```
+
+### Features
+- ✅ **Automated Testing**: Runs on every pull request
+- ✅ **Code Quality Checks**: flake8 linting and pytest tests
+- ✅ **Docker Build & Push**: Automatic containerization on master merge
+- ✅ **Jenkins Integration**: Triggers deployment pipeline
+- ✅ **Email Notifications**: Administrators notified of deployment status
+- ✅ **Multi-environment Support**: Development, testing, and production stages
+
+### Quick Setup
+1. **Configure GitHub Secrets**: Add Docker Hub and Jenkins credentials
+2. **Set up Jenkins**: Install required plugins and configure job
+3. **Configure Email**: Set up SMTP for notifications
+
+📖 **For complete setup instructions, see [PIPELINE_SETUP.md](PIPELINE_SETUP.md)**
+
+## �🐳 Docker Deployment
 
 ### Build and run with Docker:
 ```bash
@@ -95,6 +119,16 @@ docker run -p 5000:5000 student-performance-api
 docker-compose up --build
 ```
 
+### Production Deployment:
+```bash
+# Pull the latest production image
+docker pull your-username/student-performance-ml:production
+
+# Run in production mode
+docker run -d -p 5000:5000 --name student-performance-api \
+  your-username/student-performance-ml:production
+```
+
 ## 📁 Project Structure
 
 ```
@@ -108,6 +142,9 @@ student-performance-ml/
 ├── models/                 # Trained model files
 ├── data/                   # Generated datasets
 ├── .github/workflows/      # GitHub Actions workflows
+│   └── ci-cd.yml          # Main CI/CD pipeline
+├── Jenkinsfile            # Jenkins pipeline configuration
+├── PIPELINE_SETUP.md      # CI/CD setup instructions
 ├── requirements.txt        # Python dependencies
 ├── Dockerfile             # Container configuration
 ├── docker-compose.yml     # Multi-container setup
