@@ -1,320 +1,313 @@
 pipeline {
     agent any
     
+    parameters {
+        string(name: 'DOCKER_IMAGE_TAG', defaultValue: '1', description: 'Docker image tag from GitHub Actions')
+        string(name: 'GIT_COMMIT', defaultValue: '', description: 'Git commit SHA')
+        string(name: 'GIT_BRANCH', defaultValue: 'master', description: 'Git branch name')
+        string(name: 'BUILD_NUMBER', defaultValue: '1', description: 'GitHub Actions build number')
+        string(name: 'REPOSITORY_URL', defaultValue: '', description: 'GitHub repository URL')
+    }
+    
     environment {
         DOCKER_IMAGE = 'student-performance-ml'
-        DOCKER_TAG = "${env.BUILD_NUMBER}"
-        DOCKER_LATEST = 'latest'
-        DOCKERHUB_CREDENTIALS = credentials('muhammadabdullahiqbal-dockerhub')
-        ADMIN_EMAIL_LIST = credentials('admin-email-list')
-    }
-    
-    parameters {
-        string(name: 'BRANCH_NAME', defaultValue: 'master', description: 'Git branch name')
-        string(name: 'COMMIT_SHA', defaultValue: '', description: 'Git commit SHA')
-        string(name: 'COMMIT_MESSAGE', defaultValue: '', description: 'Git commit message')
-        string(name: 'GITHUB_RUN_ID', defaultValue: '', description: 'GitHub Actions run ID')
-        string(name: 'GITHUB_RUN_NUMBER', defaultValue: '', description: 'GitHub Actions run number')
-    }
-    
-    options {
-        buildDiscarder(logRotator(numToKeepStr: '10'))
-        timeout(time: 30, unit: 'MINUTES')
-        timestamps()
+        DOCKER_REGISTRY = 'docker.io'
+        NOTIFICATION_EMAIL = credentials('admin-email-list')
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-credentials')
     }
     
     stages {
-        stage('🔍 Checkout & Validation') {
+        stage('Initialize') {
             steps {
                 script {
-                    echo "🚀 Starting Jenkins Containerization Job"
-                    echo "========================================="
-                    echo "Triggered by: GitHub Actions"
-                    echo "Branch: ${params.BRANCH_NAME}"
-                    echo "Commit: ${params.COMMIT_SHA}"
-                    echo "Message: ${params.COMMIT_MESSAGE}"
-                    echo "GitHub Run: ${params.GITHUB_RUN_NUMBER}"
+                    // Set display name for better identification
+                    currentBuild.displayName = "#${env.BUILD_NUMBER} - Tag: ${params.DOCKER_IMAGE_TAG}"
+                    currentBuild.description = "Deploy ${params.GIT_COMMIT?.take(8)} from ${params.GIT_BRANCH}"
                 }
                 
-                checkout scm
-                
-                script {
-                    env.GIT_COMMIT_SHORT = sh(
-                        script: "git rev-parse --short HEAD",
-                        returnStdout: true
-                    ).trim()
-                }
+                echo "🚀 Starting Jenkins deployment pipeline"
+                echo "Docker Image Tag: ${params.DOCKER_IMAGE_TAG}"
+                echo "Git Commit: ${params.GIT_COMMIT}"
+                echo "Git Branch: ${params.GIT_BRANCH}"
+                echo "Repository: ${params.REPOSITORY_URL}"
             }
         }
         
-        stage('🐳 Docker Environment Setup') {
+        stage('Verify Docker Image') {
             steps {
                 script {
-                    env.IMAGE_NAME = "${DOCKERHUB_CREDENTIALS_USR}/${DOCKER_IMAGE}"
-                    env.IMAGE_TAG_BUILD = "${env.IMAGE_NAME}:build-${DOCKER_TAG}"
-                    env.IMAGE_TAG_LATEST = "${env.IMAGE_NAME}:${DOCKER_LATEST}"
-                    env.IMAGE_TAG_COMMIT = "${env.IMAGE_NAME}:${env.GIT_COMMIT_SHORT}"
-                    env.IMAGE_TAG_GITHUB = "${env.IMAGE_NAME}:github-${params.GITHUB_RUN_NUMBER}"
-                }
-                
-                echo "🏗️ Docker Build Configuration:"
-                echo "Repository: ${env.IMAGE_NAME}"
-                echo "Build Tag: ${env.IMAGE_TAG_BUILD}"
-                echo "Latest Tag: ${env.IMAGE_TAG_LATEST}"
-                echo "Commit Tag: ${env.IMAGE_TAG_COMMIT}"
-                echo "GitHub Tag: ${env.IMAGE_TAG_GITHUB}"
-            }
-        }
-        
-        stage('🏗️ Build Docker Image') {
-            steps {
-                script {
-                    echo "🔨 Building Docker image for production deployment..."
+                    echo "🔍 Verifying Docker image availability"
                     
-                    // Build the Docker image
-                    def image = docker.build("${env.IMAGE_TAG_BUILD}")
-                    
-                    // Tag the image with multiple tags for different purposes
+                    // Login to Docker Hub
                     sh """
-                        docker tag ${env.IMAGE_TAG_BUILD} ${env.IMAGE_TAG_LATEST}
-                        docker tag ${env.IMAGE_TAG_BUILD} ${env.IMAGE_TAG_COMMIT}
-                        docker tag ${env.IMAGE_TAG_BUILD} ${env.IMAGE_TAG_GITHUB}
+                        echo "${DOCKERHUB_CREDENTIALS_PSW}" | docker login -u "${DOCKERHUB_CREDENTIALS_USR}" --password-stdin
                     """
                     
-                    echo "✅ Docker image built and tagged successfully"
-                }
-            }
-        }
-        
-        stage('🧪 Container Testing') {
-            steps {
-                script {
-                    echo "🔍 Testing containerized application..."
+                    // Pull the image built by GitHub Actions
+                    def imageName = "${DOCKERHUB_CREDENTIALS_USR}/${DOCKER_IMAGE}:${params.DOCKER_IMAGE_TAG}"
                     
-                    // Run comprehensive tests on the container
-                    sh """
-                        # Start test container
-                        docker run --rm -d --name test-container-${BUILD_NUMBER} -p 5002:5000 ${env.IMAGE_TAG_BUILD}
-                        sleep 15
-                        
-                        echo "Testing application endpoints..."
-                        
-                        # Test health endpoint
-                        curl -f http://localhost:5002/health || (echo "Health check failed" && docker logs test-container-${BUILD_NUMBER} && exit 1)
-                        
-                        # Test model info endpoint
-                        curl -f http://localhost:5002/model/info || (echo "Model info failed" && docker logs test-container-${BUILD_NUMBER} && exit 1)
-                        
-                        # Test sample data generation
-                        curl -f http://localhost:5002/generate/sample || (echo "Sample generation failed" && docker logs test-container-${BUILD_NUMBER} && exit 1)
-                        
-                        echo "✅ All container tests passed"
-                        
-                        # Stop test container
-                        docker stop test-container-${BUILD_NUMBER}
-                    """
-                }
-            }
-            post {
-                always {
-                    sh "docker stop test-container-${BUILD_NUMBER} || true"
-                    sh "docker rm test-container-${BUILD_NUMBER} || true"
-                }
-            }
-        }
-        
-        stage('📤 Push to Docker Hub') {
-            steps {
-                script {
-                    echo "🚀 Pushing Docker images to Docker Hub..."
-                    
-                    docker.withRegistry('https://index.docker.io/v1/', 'muhammadabdullahiqbal-dockerhub') {
-                        // Push all tags
+                    try {
                         sh """
-                            echo "Pushing build-specific tag..."
-                            docker push ${env.IMAGE_TAG_BUILD}
-                            
-                            echo "Pushing latest tag..."
-                            docker push ${env.IMAGE_TAG_LATEST}
-                            
-                            echo "Pushing commit-specific tag..."
-                            docker push ${env.IMAGE_TAG_COMMIT}
-                            
-                            echo "Pushing GitHub-specific tag..."
-                            docker push ${env.IMAGE_TAG_GITHUB}
+                            docker pull ${imageName}
+                            docker inspect ${imageName}
+                        """
+                        echo "✅ Docker image verified successfully"
+                    } catch (Exception e) {
+                        error "❌ Failed to verify Docker image: ${imageName}"
+                    }
+                }
+            }
+        }
+        
+        stage('Test Container') {
+            steps {
+                script {
+                    echo "🧪 Testing containerized application"
+                    
+                    def imageName = "${DOCKERHUB_CREDENTIALS_USR}/${DOCKER_IMAGE}:${params.DOCKER_IMAGE_TAG}"
+                    def containerName = "test-${DOCKER_IMAGE}-${env.BUILD_NUMBER}"
+                    
+                    try {
+                        // Run container for testing
+                        sh """
+                            docker run -d --name ${containerName} -p 5001:5000 ${imageName}
+                            sleep 15
+                        """
+                        
+                        // Test health endpoint
+                        sh """
+                            curl -f http://localhost:5001/health || exit 1
+                            echo "✅ Health check passed"
+                        """
+                        
+                        // Test prediction endpoint with sample data
+                        sh """
+                            curl -X POST -H "Content-Type: application/json" \\
+                                -d '{"age": 18, "gender": "Female", "previous_gpa": 3.5, "study_hours_per_week": 20, "attendance_rate": 85, "parental_education": "Bachelor", "household_income": 50000, "class_size": 25, "has_internet": 1, "has_computer": 1, "school_type": "Public", "sleep_hours": 7, "exercise_hours_per_week": 3, "extracurricular_hours": 5}' \\
+                                http://localhost:5001/predict || exit 1
+                            echo "✅ Prediction endpoint test passed"
+                        """
+                        
+                        echo "✅ Container testing completed successfully"
+                        
+                    } catch (Exception e) {
+                        error "❌ Container testing failed: ${e.getMessage()}"
+                    } finally {
+                        // Cleanup test container
+                        sh """
+                            docker stop ${containerName} || true
+                            docker rm ${containerName} || true
                         """
                     }
-                    
-                    echo "✅ All Docker images pushed successfully to Docker Hub"
                 }
             }
         }
         
-        stage('🧹 Cleanup') {
+        stage('Tag and Push Final Image') {
             steps {
                 script {
-                    echo "🧽 Cleaning up local Docker images..."
+                    echo "🏷️ Tagging and pushing final production image"
                     
-                    sh """
-                        docker rmi ${env.IMAGE_TAG_BUILD} || true
-                        docker rmi ${env.IMAGE_TAG_LATEST} || true
-                        docker rmi ${env.IMAGE_TAG_COMMIT} || true
-                        docker rmi ${env.IMAGE_TAG_GITHUB} || true
-                        docker system prune -f
-                    """
+                    def sourceImage = "${DOCKERHUB_CREDENTIALS_USR}/${DOCKER_IMAGE}:${params.DOCKER_IMAGE_TAG}"
+                    def prodImage = "${DOCKERHUB_CREDENTIALS_USR}/${DOCKER_IMAGE}:production"
+                    def stableImage = "${DOCKERHUB_CREDENTIALS_USR}/${DOCKER_IMAGE}:stable"
                     
-                    echo "✅ Cleanup completed"
+                    try {
+                        // Tag as production and stable
+                        sh """
+                            docker tag ${sourceImage} ${prodImage}
+                            docker tag ${sourceImage} ${stableImage}
+                            
+                            docker push ${prodImage}
+                            docker push ${stableImage}
+                        """
+                        
+                        echo "✅ Production images pushed successfully"
+                        
+                    } catch (Exception e) {
+                        error "❌ Failed to tag and push production image: ${e.getMessage()}"
+                    }
+                }
+            }
+        }
+        
+        stage('Deployment Verification') {
+            steps {
+                script {
+                    echo "✅ Deployment verification completed"
+                    echo "📦 Available Docker Images:"
+                    echo "  - ${DOCKERHUB_CREDENTIALS_USR}/${DOCKER_IMAGE}:${params.DOCKER_IMAGE_TAG}"
+                    echo "  - ${DOCKERHUB_CREDENTIALS_USR}/${DOCKER_IMAGE}:production"
+                    echo "  - ${DOCKERHUB_CREDENTIALS_USR}/${DOCKER_IMAGE}:stable"
+                    echo "  - ${DOCKERHUB_CREDENTIALS_USR}/${DOCKER_IMAGE}:latest"
                 }
             }
         }
     }
     
     post {
+        always {
+            script {
+                // Cleanup Docker images to save space
+                sh """
+                    docker system prune -f
+                """
+            }
+        }
+        
         success {
             script {
-                def buildDuration = currentBuild.durationString.replace(' and counting', '')
-                def emailBody = """
-                <html>
-                <body style="font-family: Arial, sans-serif;">
-                    <div style="background-color: #d4edda; border: 1px solid #c3e6cb; border-radius: 5px; padding: 20px; margin: 20px 0;">
-                        <h2 style="color: #155724; margin-top: 0;">🎉 Jenkins Deployment Successful</h2>
-                    </div>
-                    
-                    <h3>📋 Build Information</h3>
-                    <table style="border-collapse: collapse; width: 100%;">
-                        <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Project:</strong></td><td style="padding: 8px; border: 1px solid #ddd;">Student Performance ML</td></tr>
-                        <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Jenkins Build:</strong></td><td style="padding: 8px; border: 1px solid #ddd;">#${BUILD_NUMBER}</td></tr>
-                        <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>GitHub Actions Run:</strong></td><td style="padding: 8px; border: 1px solid #ddd;">#${params.GITHUB_RUN_NUMBER}</td></tr>
-                        <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Branch:</strong></td><td style="padding: 8px; border: 1px solid #ddd;">${params.BRANCH_NAME}</td></tr>
-                        <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Commit SHA:</strong></td><td style="padding: 8px; border: 1px solid #ddd;">${params.COMMIT_SHA}</td></tr>
-                        <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Commit Message:</strong></td><td style="padding: 8px; border: 1px solid #ddd;">${params.COMMIT_MESSAGE}</td></tr>
-                        <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Build Duration:</strong></td><td style="padding: 8px; border: 1px solid #ddd;">${buildDuration}</td></tr>
-                    </table>
-                    
-                    <h3>🐳 Docker Images Published</h3>
-                    <ul>
-                        <li><code>${env.IMAGE_TAG_BUILD}</code> - Build-specific tag</li>
-                        <li><code>${env.IMAGE_TAG_LATEST}</code> - Latest production tag</li>
-                        <li><code>${env.IMAGE_TAG_COMMIT}</code> - Commit-specific tag</li>
-                        <li><code>${env.IMAGE_TAG_GITHUB}</code> - GitHub Actions tag</li>
-                    </ul>
-                    
-                    <h3>🔗 Quick Links</h3>
-                    <ul>
-                        <li><a href="${BUILD_URL}">📊 Jenkins Build Details</a></li>
-                        <li><a href="https://hub.docker.com/r/${DOCKERHUB_CREDENTIALS_USR}/${DOCKER_IMAGE}">🐳 Docker Hub Repository</a></li>
-                        <li><a href="https://github.com/MuhammadAbdullahIqbal23/student-performance-ml/actions/runs/${params.GITHUB_RUN_ID}">🚀 GitHub Actions Run</a></li>
-                    </ul>
-                    
-                    <h3>🚀 Deployment Status</h3>
-                    <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; border-radius: 5px; padding: 15px;">
-                        <p style="margin: 0;"><strong>✅ Application Successfully Containerized and Deployed</strong></p>
-                        <p style="margin: 5px 0 0 0;">The Student Performance ML application is now available on Docker Hub with multiple tags for different deployment scenarios.</p>
-                    </div>
-                    
-                    <hr style="margin: 30px 0;">
-                    <p style="color: #6c757d; font-size: 12px;"><em>This is an automated notification from Jenkins CI/CD Pipeline<br>
-                    Triggered by successful merge to master branch</em></p>
-                </body>
-                </html>
-                """
+                echo "🎉 Jenkins pipeline completed successfully!"
                 
+                // Send success email notification
                 emailext (
-                    subject: "✅ Jenkins Build #${BUILD_NUMBER} - SUCCESS - Student Performance ML Deployed",
-                    body: emailBody,
-                    mimeType: 'text/html',
-                    to: "${ADMIN_EMAIL_LIST}",
-                    recipientProviders: [
-                        [$class: 'DevelopersRecipientProvider'],
-                        [$class: 'RequesterRecipientProvider']
-                    ]
+                    subject: "✅ Deployment Successful - Student Performance ML [Build #${env.BUILD_NUMBER}]",
+                    body: """
+                    <html>
+                    <body style="font-family: Arial, sans-serif;">
+                        <h2 style="color: #28a745;">🎉 Deployment Completed Successfully!</h2>
+                        
+                        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0;">
+                            <h3>📋 Build Information</h3>
+                            <ul>
+                                <li><strong>Project:</strong> Student Performance ML</li>
+                                <li><strong>Jenkins Build:</strong> #${env.BUILD_NUMBER}</li>
+                                <li><strong>GitHub Build:</strong> #${params.BUILD_NUMBER}</li>
+                                <li><strong>Git Commit:</strong> <code>${params.GIT_COMMIT}</code></li>
+                                <li><strong>Branch:</strong> ${params.GIT_BRANCH}</li>
+                                <li><strong>Repository:</strong> <a href="${params.REPOSITORY_URL}">${params.REPOSITORY_URL}</a></li>
+                                <li><strong>Build Time:</strong> ${new Date()}</li>
+                            </ul>
+                        </div>
+                        
+                        <div style="background-color: #e8f5e8; padding: 15px; border-radius: 5px; margin: 10px 0;">
+                            <h3>🐳 Docker Images</h3>
+                            <ul>
+                                <li><code>${DOCKERHUB_CREDENTIALS_USR}/${DOCKER_IMAGE}:${params.DOCKER_IMAGE_TAG}</code></li>
+                                <li><code>${DOCKERHUB_CREDENTIALS_USR}/${DOCKER_IMAGE}:production</code></li>
+                                <li><code>${DOCKERHUB_CREDENTIALS_USR}/${DOCKER_IMAGE}:stable</code></li>
+                                <li><code>${DOCKERHUB_CREDENTIALS_USR}/${DOCKER_IMAGE}:latest</code></li>
+                            </ul>
+                        </div>
+                        
+                        <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 10px 0;">
+                            <h3>🚀 Next Steps</h3>
+                            <p>The containerized application has been successfully built, tested, and pushed to Docker Hub.</p>
+                            <p>You can now deploy the application using:</p>
+                            <pre style="background-color: #f8f9fa; padding: 10px; border-radius: 3px;">docker run -p 5000:5000 ${DOCKERHUB_CREDENTIALS_USR}/${DOCKER_IMAGE}:production</pre>
+                        </div>
+                        
+                        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #dee2e6;">
+                            <p style="color: #6c757d; font-size: 12px;">
+                                This is an automated message from Jenkins CI/CD Pipeline.<br>
+                                Jenkins URL: <a href="${env.JENKINS_URL}">${env.JENKINS_URL}</a>
+                            </p>
+                        </div>
+                    </body>
+                    </html>
+                    """,
+                    to: "${NOTIFICATION_EMAIL}",
+                    mimeType: 'text/html'
                 )
-                
-                echo "📧 Success notification email sent to administrators"
             }
         }
         
         failure {
             script {
-                def buildDuration = currentBuild.durationString.replace(' and counting', '')
-                def emailBody = """
-                <html>
-                <body style="font-family: Arial, sans-serif;">
-                    <div style="background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 5px; padding: 20px; margin: 20px 0;">
-                        <h2 style="color: #721c24; margin-top: 0;">❌ Jenkins Deployment Failed</h2>
-                    </div>
-                    
-                    <h3>📋 Build Information</h3>
-                    <table style="border-collapse: collapse; width: 100%;">
-                        <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Project:</strong></td><td style="padding: 8px; border: 1px solid #ddd;">Student Performance ML</td></tr>
-                        <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Jenkins Build:</strong></td><td style="padding: 8px; border: 1px solid #ddd;">#${BUILD_NUMBER}</td></tr>
-                        <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>GitHub Actions Run:</strong></td><td style="padding: 8px; border: 1px solid #ddd;">#${params.GITHUB_RUN_NUMBER}</td></tr>
-                        <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Branch:</strong></td><td style="padding: 8px; border: 1px solid #ddd;">${params.BRANCH_NAME}</td></tr>
-                        <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Failed Stage:</strong></td><td style="padding: 8px; border: 1px solid #ddd;">${env.STAGE_NAME ?: 'Unknown'}</td></tr>
-                        <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Build Duration:</strong></td><td style="padding: 8px; border: 1px solid #ddd;">${buildDuration}</td></tr>
-                    </table>
-                    
-                    <div style="background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 5px; padding: 15px; margin: 20px 0;">
-                        <p style="margin: 0; color: #721c24;"><strong>🚨 Immediate Attention Required!</strong></p>
-                        <p style="margin: 5px 0 0 0; color: #721c24;">The containerization and deployment process has failed. Please review the build logs and fix the issues.</p>
-                    </div>
-                    
-                    <h3>🔗 Troubleshooting Links</h3>
-                    <ul>
-                        <li><a href="${BUILD_URL}console">🔍 Jenkins Console Output</a></li>
-                        <li><a href="${BUILD_URL}">📊 Jenkins Build Details</a></li>
-                        <li><a href="https://github.com/MuhammadAbdullahIqbal23/student-performance-ml/actions/runs/${params.GITHUB_RUN_ID}">🚀 GitHub Actions Run</a></li>
-                    </ul>
-                    
-                    <hr style="margin: 30px 0;">
-                    <p style="color: #6c757d; font-size: 12px;"><em>This is an automated notification from Jenkins CI/CD Pipeline</em></p>
-                </body>
-                </html>
-                """
+                echo "❌ Jenkins pipeline failed!"
                 
+                // Send failure email notification
                 emailext (
-                    subject: "❌ Jenkins Build #${BUILD_NUMBER} - FAILED - Student Performance ML",
-                    body: emailBody,
-                    mimeType: 'text/html',
-                    to: "${ADMIN_EMAIL_LIST}",
-                    recipientProviders: [
-                        [$class: 'DevelopersRecipientProvider'],
-                        [$class: 'RequesterRecipientProvider']
-                    ]
+                    subject: "❌ Deployment Failed - Student Performance ML [Build #${env.BUILD_NUMBER}]",
+                    body: """
+                    <html>
+                    <body style="font-family: Arial, sans-serif;">
+                        <h2 style="color: #dc3545;">❌ Deployment Failed!</h2>
+                        
+                        <div style="background-color: #f8d7da; padding: 15px; border-radius: 5px; margin: 10px 0;">
+                            <h3>🚨 Build Information</h3>
+                            <ul>
+                                <li><strong>Project:</strong> Student Performance ML</li>
+                                <li><strong>Jenkins Build:</strong> #${env.BUILD_NUMBER}</li>
+                                <li><strong>GitHub Build:</strong> #${params.BUILD_NUMBER}</li>
+                                <li><strong>Git Commit:</strong> <code>${params.GIT_COMMIT}</code></li>
+                                <li><strong>Branch:</strong> ${params.GIT_BRANCH}</li>
+                                <li><strong>Repository:</strong> <a href="${params.REPOSITORY_URL}">${params.REPOSITORY_URL}</a></li>
+                                <li><strong>Failure Time:</strong> ${new Date()}</li>
+                            </ul>
+                        </div>
+                        
+                        <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 10px 0;">
+                            <h3>🔍 Investigation Steps</h3>
+                            <ol>
+                                <li>Check the Jenkins console output for detailed error messages</li>
+                                <li>Verify Docker Hub credentials and permissions</li>
+                                <li>Ensure the Docker image was built correctly by GitHub Actions</li>
+                                <li>Review application logs and container health</li>
+                            </ol>
+                        </div>
+                        
+                        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #dee2e6;">
+                            <p style="color: #6c757d; font-size: 12px;">
+                                This is an automated message from Jenkins CI/CD Pipeline.<br>
+                                Jenkins URL: <a href="${env.JENKINS_URL}">${env.JENKINS_URL}</a><br>
+                                Console Output: <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a>
+                            </p>
+                        </div>
+                    </body>
+                    </html>
+                    """,
+                    to: "${NOTIFICATION_EMAIL}",
+                    mimeType: 'text/html'
                 )
-                
-                echo "📧 Failure notification email sent to administrators"
             }
         }
         
-        always {
-            // Archive build information
+        unstable {
             script {
-                writeFile file: 'build-info.txt', text: """
-Build Information:
-==================
-Jenkins Build: ${BUILD_NUMBER}
-GitHub Actions Run: ${params.GITHUB_RUN_NUMBER}
-Branch: ${params.BRANCH_NAME}
-Commit: ${params.COMMIT_SHA}
-Commit Message: ${params.COMMIT_MESSAGE}
-Build Status: ${currentBuild.currentResult}
-Build Duration: ${currentBuild.durationString}
-Docker Images:
-- ${env.IMAGE_TAG_BUILD}
-- ${env.IMAGE_TAG_LATEST}
-- ${env.IMAGE_TAG_COMMIT}
-- ${env.IMAGE_TAG_GITHUB}
-"""
-                archiveArtifacts artifacts: 'build-info.txt', fingerprint: true
+                echo "⚠️ Jenkins pipeline completed with warnings!"
+                
+                // Send warning email notification
+                emailext (
+                    subject: "⚠️ Deployment Completed with Warnings - Student Performance ML [Build #${env.BUILD_NUMBER}]",
+                    body: """
+                    <html>
+                    <body style="font-family: Arial, sans-serif;">
+                        <h2 style="color: #ffc107;">⚠️ Deployment Completed with Warnings!</h2>
+                        
+                        <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 10px 0;">
+                            <h3>📋 Build Information</h3>
+                            <ul>
+                                <li><strong>Project:</strong> Student Performance ML</li>
+                                <li><strong>Jenkins Build:</strong> #${env.BUILD_NUMBER}</li>
+                                <li><strong>GitHub Build:</strong> #${params.BUILD_NUMBER}</li>
+                                <li><strong>Git Commit:</strong> <code>${params.GIT_COMMIT}</code></li>
+                                <li><strong>Branch:</strong> ${params.GIT_BRANCH}</li>
+                                <li><strong>Repository:</strong> <a href="${params.REPOSITORY_URL}">${params.REPOSITORY_URL}</a></li>
+                                <li><strong>Completion Time:</strong> ${new Date()}</li>
+                            </ul>
+                        </div>
+                        
+                        <div style="background-color: #f8d7da; padding: 15px; border-radius: 5px; margin: 10px 0;">
+                            <h3>⚠️ Warning Notice</h3>
+                            <p>The deployment completed but with warnings. Please review the console output to understand what issues occurred.</p>
+                            <p>The application may still be functional, but some components might not be working as expected.</p>
+                        </div>
+                        
+                        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #dee2e6;">
+                            <p style="color: #6c757d; font-size: 12px;">
+                                This is an automated message from Jenkins CI/CD Pipeline.<br>
+                                Jenkins URL: <a href="${env.JENKINS_URL}">${env.JENKINS_URL}</a><br>
+                                Console Output: <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a>
+                            </p>
+                        </div>
+                    </body>
+                    </html>
+                    """,
+                    to: "${NOTIFICATION_EMAIL}",
+                    mimeType: 'text/html'
+                )
             }
-            
-            // Clean workspace
-            cleanWs(
-                deleteDirs: true,
-                notFailBuild: true,
-                patterns: [[pattern: '.git', type: 'EXCLUDE']]
-            )
         }
     }
 }
