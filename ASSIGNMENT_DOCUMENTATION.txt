@@ -1,0 +1,483 @@
+================================================================================
+KUBERNETES DEPLOYMENT ASSIGNMENT - DOCUMENTATION
+================================================================================
+Student Performance ML System - Docker Hub & Kubernetes Deployment
+Date: October 9, 2025
+
+================================================================================
+PART 1: PUSHING DOCKER IMAGE TO DOCKER HUB
+================================================================================
+
+SYSTEM OVERVIEW:
+----------------
+Project: Student Performance Prediction ML System
+Technology Stack: Flask REST API, Machine Learning (Random Forest), Docker
+Docker Image Base: Python 3.9-slim
+Application Port: 5000
+
+STEPS PERFORMED:
+----------------
+
+Step 1: Build Docker Image Locally
+-----------------------------------
+Command Used:
+    docker build -t student-performance-api .
+
+Explanation: This command builds a Docker image from the Dockerfile in the 
+current directory. The image contains the Flask API, trained ML models, and 
+all dependencies needed to predict student performance.
+
+📸 SCREENSHOT 1: Docker Build Process
+   WHAT TO CAPTURE: Terminal showing the docker build command execution
+   HIGHLIGHT: 
+   - The "docker build" command at the top
+   - "Successfully built [image-id]" message at the bottom
+   - "Successfully tagged student-performance-api:latest" message
+
+
+Step 2: Tag Image for Docker Hub
+---------------------------------
+Command Used:
+    docker tag student-performance-api:latest YOUR_USERNAME/student-performance-api:latest
+    docker tag student-performance-api:latest YOUR_USERNAME/student-performance-api:v1.0
+
+Explanation: Tagging creates references to the same image with different names.
+We create two tags:
+- "latest": Points to the most recent version
+- "v1.0": Specific version number for tracking
+
+📸 SCREENSHOT 2: Docker Images List
+   WHAT TO CAPTURE: Output of "docker images" command
+   HIGHLIGHT:
+   - Repository name (YOUR_USERNAME/student-performance-api)
+   - Both tags (latest and v1.0)
+   - Image size and creation date
+
+
+Step 3: Login to Docker Hub
+----------------------------
+Command Used:
+    docker login
+
+Explanation: Authenticates with Docker Hub using your username and password/token.
+This is required before pushing images to Docker Hub registry.
+
+📸 SCREENSHOT 3: Docker Login Success
+   WHAT TO CAPTURE: Terminal showing login command and success message
+   HIGHLIGHT:
+   - "docker login" command
+   - "Login Succeeded" message
+   - Username (if visible)
+
+
+Step 4: Push Image to Docker Hub
+---------------------------------
+Commands Used:
+    docker push YOUR_USERNAME/student-performance-api:latest
+    docker push YOUR_USERNAME/student-performance-api:v1.0
+
+Explanation: Uploads the Docker image to Docker Hub repository. Both tags are
+pushed separately. The image layers are uploaded once and shared between tags.
+
+📸 SCREENSHOT 4: Docker Push Process
+   WHAT TO CAPTURE: Terminal showing push progress
+   HIGHLIGHT:
+   - "docker push" command
+   - Layer upload progress bars
+   - "Pushed" or digest message confirming successful push
+
+
+Step 5: Verify on Docker Hub Website
+-------------------------------------
+Location: https://hub.docker.com/
+
+Explanation: Login to Docker Hub web interface to verify the image was 
+successfully pushed and is publicly available.
+
+📸 SCREENSHOT 5: Docker Hub Repository Page
+   WHAT TO CAPTURE: Docker Hub web interface showing your repository
+   HIGHLIGHT:
+   - Repository name (YOUR_USERNAME/student-performance-api)
+   - Tags section showing "latest" and "v1.0"
+   - Last pushed timestamp
+   - Image size
+   - Public/Private status
+
+
+================================================================================
+PART 2: KUBERNETES DEPLOYMENT & SERVICE FILES
+================================================================================
+
+KUBERNETES CONFIGURATION OVERVIEW:
+-----------------------------------
+Application: Student Performance ML API
+Replicas: 3 (for high availability)
+Container Port: 5000
+Service Type: LoadBalancer (for external access)
+Resource Limits: CPU and Memory constraints configured
+
+FILE 1: DEPLOYMENT YAML (deployment.yaml)
+------------------------------------------
+Purpose: Defines how the application should be deployed in Kubernetes cluster
+
+Key Components:
+- apiVersion: apps/v1 (Kubernetes Deployment API version)
+- kind: Deployment (Resource type)
+- metadata: Name and labels for the deployment
+- spec: Deployment specification
+  - replicas: 3 (Number of pod instances)
+  - selector: How to identify pods managed by this deployment
+  - template: Pod template specification
+    - containers: Container configuration
+      - image: Docker Hub image reference
+      - ports: Container port 5000
+      - resources: CPU and memory limits
+      - livenessProbe: Health check endpoint
+      - readinessProbe: Ready check endpoint
+
+Important Features:
+- Rolling update strategy for zero-downtime deployments
+- Resource limits to prevent resource exhaustion
+- Health checks to ensure pod reliability
+- Labels for service discovery
+
+📸 SCREENSHOT 6: deployment.yaml File Content
+   WHAT TO CAPTURE: Text editor or cat command showing deployment.yaml
+   HIGHLIGHT:
+   - "kind: Deployment" line
+   - "replicas: 3" line
+   - "image: YOUR_USERNAME/student-performance-api:latest" line
+   - Resource limits section
+   - Liveness and readiness probe sections
+
+
+FILE 2: SERVICE YAML (service.yaml)
+------------------------------------
+Purpose: Exposes the deployment to network traffic and provides load balancing
+
+Key Components:
+- apiVersion: v1 (Kubernetes Service API version)
+- kind: Service (Resource type)
+- metadata: Name and labels for the service
+- spec: Service specification
+  - type: LoadBalancer (Exposes service externally)
+  - selector: Matches pods with specific labels
+  - ports: Port mapping configuration
+    - port: 80 (External access port)
+    - targetPort: 5000 (Container port)
+    - protocol: TCP
+
+Important Features:
+- LoadBalancer type provides external IP
+- Port 80 mapped to container port 5000
+- Selector matches deployment labels
+- Enables load balancing across multiple replicas
+
+📸 SCREENSHOT 7: service.yaml File Content
+   WHAT TO CAPTURE: Text editor or cat command showing service.yaml
+   HIGHLIGHT:
+   - "kind: Service" line
+   - "type: LoadBalancer" line
+   - Port mapping (port: 80, targetPort: 5000)
+   - Selector section matching deployment labels
+
+
+================================================================================
+PART 3: DEPLOYING TO KUBERNETES
+================================================================================
+
+PREREQUISITE CHECK:
+-------------------
+Kubernetes Cluster: Minikube/Kind/Cloud Kubernetes (GKE/EKS/AKS)
+kubectl CLI: Installed and configured
+Cluster Access: kubectl configured with proper context
+
+Step 1: Verify Kubernetes Cluster
+----------------------------------
+Command Used:
+    kubectl cluster-info
+    kubectl get nodes
+
+Explanation: Verifies that kubectl can connect to the Kubernetes cluster
+and shows the cluster endpoint and available nodes.
+
+📸 SCREENSHOT 8: Cluster Information
+   WHAT TO CAPTURE: Output of kubectl cluster-info and kubectl get nodes
+   HIGHLIGHT:
+   - Kubernetes master URL
+   - Node status showing "Ready"
+   - Node version and age
+
+
+Step 2: Create Namespace (Optional but Recommended)
+----------------------------------------------------
+Command Used:
+    kubectl create namespace student-performance
+
+Explanation: Creates an isolated namespace for better organization and
+resource management. This separates the application from other workloads.
+
+📸 SCREENSHOT 9: Namespace Creation
+   WHAT TO CAPTURE: Terminal showing namespace creation
+   HIGHLIGHT:
+   - kubectl create namespace command
+   - Success message
+
+
+Step 3: Apply Deployment Configuration
+---------------------------------------
+Command Used:
+    kubectl apply -f deployment.yaml
+    (or with namespace: kubectl apply -f deployment.yaml -n student-performance)
+
+Explanation: Creates the deployment in Kubernetes. This instructs Kubernetes
+to create 3 replica pods running the Student Performance API container.
+
+📸 SCREENSHOT 10: Deployment Creation
+   WHAT TO CAPTURE: Terminal showing kubectl apply command and output
+   HIGHLIGHT:
+   - "kubectl apply -f deployment.yaml" command
+   - "deployment.apps/student-performance-api created" message
+
+
+Step 4: Verify Deployment Status
+---------------------------------
+Command Used:
+    kubectl get deployments
+    kubectl get pods
+    kubectl describe deployment student-performance-api
+
+Explanation: Checks the deployment status and verifies that all 3 replicas
+are running successfully.
+
+📸 SCREENSHOT 11: Deployment and Pods Status
+   WHAT TO CAPTURE: Output of kubectl get deployments and kubectl get pods
+   HIGHLIGHT:
+   - Deployment name showing "3/3" ready replicas
+   - All 3 pods with "Running" status
+   - Pod names, ready status, and age
+
+
+Step 5: Apply Service Configuration
+------------------------------------
+Command Used:
+    kubectl apply -f service.yaml
+    (or with namespace: kubectl apply -f service.yaml -n student-performance)
+
+Explanation: Creates the service that exposes the deployment. LoadBalancer
+type provisions an external IP for accessing the application from outside
+the cluster.
+
+📸 SCREENSHOT 12: Service Creation
+   WHAT TO CAPTURE: Terminal showing kubectl apply command for service
+   HIGHLIGHT:
+   - "kubectl apply -f service.yaml" command
+   - "service/student-performance-service created" message
+
+
+Step 6: Verify Service Status
+------------------------------
+Command Used:
+    kubectl get services
+    kubectl describe service student-performance-service
+
+Explanation: Checks service status and retrieves the external IP address
+or LoadBalancer endpoint.
+
+📸 SCREENSHOT 13: Service Status with External IP
+   WHAT TO CAPTURE: Output of kubectl get services
+   HIGHLIGHT:
+   - Service name
+   - Type: LoadBalancer
+   - Cluster-IP
+   - External-IP (if available, might show <pending> initially)
+   - Port mapping (80:5000/TCP)
+
+
+Step 7: Access Application
+---------------------------
+For Minikube:
+    minikube service student-performance-service --url
+
+For Cloud Kubernetes:
+    Use the EXTERNAL-IP from kubectl get services
+    Access: http://EXTERNAL-IP:80
+
+Explanation: Retrieves the URL to access the application. The service load
+balances requests across the 3 replica pods.
+
+📸 SCREENSHOT 14: Application Access
+   WHAT TO CAPTURE: Browser showing the Flask API homepage
+   HIGHLIGHT:
+   - URL in browser address bar
+   - Flask API welcome page or documentation
+   - Working application interface
+
+
+Step 8: Test API Endpoint
+--------------------------
+Command Used:
+    curl http://EXTERNAL-IP:80/health
+    curl http://EXTERNAL-IP:80/model/info
+
+Explanation: Tests that the application is responding correctly and the
+ML model is loaded and accessible.
+
+📸 SCREENSHOT 15: API Health Check Response
+   WHAT TO CAPTURE: Terminal showing curl command and JSON response
+   HIGHLIGHT:
+   - curl command with /health endpoint
+   - JSON response showing "status": "healthy"
+   - "model_loaded": true in response
+
+
+Step 9: View Pod Logs (Optional Verification)
+----------------------------------------------
+Command Used:
+    kubectl logs <pod-name>
+    kubectl logs -l app=student-performance-api --tail=50
+
+Explanation: Shows application logs from running pods to verify the Flask
+application started successfully and is processing requests.
+
+📸 SCREENSHOT 16: Pod Logs
+   WHAT TO CAPTURE: Output of kubectl logs command
+   HIGHLIGHT:
+   - Flask application startup messages
+   - "Running on http://0.0.0.0:5000" message
+   - Model loading success messages
+
+
+Step 10: Verify Scaling and Load Balancing
+-------------------------------------------
+Command Used:
+    kubectl get pods -o wide
+    kubectl get endpoints student-performance-service
+
+Explanation: Shows all 3 pods running on different nodes (if multi-node)
+and the service endpoints pointing to all pod IPs.
+
+📸 SCREENSHOT 17: Pods Distribution and Endpoints
+   WHAT TO CAPTURE: Output showing all 3 pods and service endpoints
+   HIGHLIGHT:
+   - All 3 pods with their IP addresses
+   - Node assignment (if multi-node cluster)
+   - Service endpoints listing all 3 pod IPs
+
+
+================================================================================
+ADDITIONAL COMMANDS FOR DEMONSTRATION
+================================================================================
+
+Scaling the Deployment:
+-----------------------
+Command: kubectl scale deployment student-performance-api --replicas=5
+Shows: Kubernetes automatically scaling pods
+
+Rolling Update:
+---------------
+Command: kubectl set image deployment/student-performance-api \
+         student-performance-api=YOUR_USERNAME/student-performance-api:v2.0
+Shows: Zero-downtime updates
+
+Delete and Recreate:
+--------------------
+Commands:
+    kubectl delete -f service.yaml
+    kubectl delete -f deployment.yaml
+Shows: Clean resource removal
+
+
+================================================================================
+FINAL VERIFICATION CHECKLIST
+================================================================================
+
+✓ Docker image built successfully
+✓ Docker image pushed to Docker Hub with tags
+✓ Docker Hub repository shows the image publicly
+✓ deployment.yaml created with proper configuration
+✓ service.yaml created with LoadBalancer type
+✓ Kubernetes deployment created successfully
+✓ All 3 replica pods are running
+✓ Kubernetes service created and assigned external IP
+✓ Application accessible via external endpoint
+✓ API health check returns successful response
+✓ ML model loaded and predictions working
+
+
+================================================================================
+KEY SCREENSHOTS SUMMARY (17 Total)
+================================================================================
+
+1. Docker Build Process - Build command and success
+2. Docker Images List - Tagged images
+3. Docker Login Success - Authentication
+4. Docker Push Process - Upload to Docker Hub
+5. Docker Hub Repository - Web interface verification
+6. deployment.yaml Content - Deployment configuration
+7. service.yaml Content - Service configuration
+8. Cluster Information - kubectl cluster-info
+9. Namespace Creation - Resource organization
+10. Deployment Creation - kubectl apply deployment
+11. Deployment and Pods Status - Running replicas
+12. Service Creation - kubectl apply service
+13. Service Status - LoadBalancer with external IP
+14. Application Access - Browser showing API
+15. API Health Check - curl response
+16. Pod Logs - Application startup
+17. Pods Distribution - Scaling verification
+
+
+================================================================================
+TECHNICAL HIGHLIGHTS FOR REPORT
+================================================================================
+
+DOCKER BENEFITS:
+- Containerization ensures consistent environment
+- Image versioning with tags (latest, v1.0)
+- Easy distribution via Docker Hub
+- Platform-independent deployment
+
+KUBERNETES BENEFITS:
+- High availability with 3 replicas
+- Automatic load balancing across pods
+- Self-healing (pods restart if they crash)
+- Easy scaling (horizontal pod autoscaling)
+- Rolling updates for zero-downtime deployments
+- Service discovery and networking
+
+ML SYSTEM SPECIFICS:
+- Flask API serves trained Random Forest model
+- Predicts student academic performance
+- Multiple endpoints: health check, predictions, batch processing
+- Production-ready with health checks and resource limits
+
+
+================================================================================
+TROUBLESHOOTING NOTES
+================================================================================
+
+If Docker Push Fails:
+- Verify Docker Hub login: docker login
+- Check image tag matches your username
+- Ensure repository exists on Docker Hub
+
+If Pods Don't Start:
+- Check image pull: kubectl describe pod <pod-name>
+- Verify image name in deployment.yaml
+- Check Docker Hub image is public or add imagePullSecrets
+
+If Service No External IP (Minikube):
+- Use: minikube service student-performance-service --url
+- Or: minikube tunnel (in separate terminal)
+
+If Application Not Responding:
+- Check pod logs: kubectl logs <pod-name>
+- Verify container port matches service targetPort
+- Test from within cluster: kubectl exec -it <pod> -- curl localhost:5000/health
+
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
+

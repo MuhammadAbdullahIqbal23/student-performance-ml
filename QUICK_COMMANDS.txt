@@ -1,0 +1,104 @@
+================================================================================
+QUICK REFERENCE - COMMANDS TO RUN
+================================================================================
+
+IMPORTANT: Replace YOUR_USERNAME with your actual Docker Hub username!
+
+================================================================================
+PART 1: DOCKER HUB
+================================================================================
+
+# Build Docker image
+docker build -t student-performance-api .
+
+# Tag for Docker Hub (replace YOUR_USERNAME)
+docker tag student-performance-api:latest YOUR_USERNAME/student-performance-api:latest
+docker tag student-performance-api:latest YOUR_USERNAME/student-performance-api:v1.0
+
+# Login to Docker Hub
+docker login
+
+# Push to Docker Hub
+docker push YOUR_USERNAME/student-performance-api:latest
+docker push YOUR_USERNAME/student-performance-api:v1.0
+
+# Verify images
+docker images | grep student-performance
+
+
+================================================================================
+PART 2: KUBERNETES DEPLOYMENT
+================================================================================
+
+# Before deploying, update deployment.yaml:
+# Change "YOUR_USERNAME" to your actual Docker Hub username!
+
+# Verify cluster connection
+kubectl cluster-info
+kubectl get nodes
+
+# Optional: Create namespace
+kubectl create namespace student-performance
+
+# Deploy application
+kubectl apply -f deployment.yaml
+
+# Deploy service
+kubectl apply -f service.yaml
+
+# Check deployment status
+kubectl get deployments
+kubectl get pods
+kubectl get services
+
+# View detailed information
+kubectl describe deployment student-performance-api
+kubectl describe service student-performance-service
+
+# Get pod logs
+kubectl logs -l app=student-performance-api
+
+# For Minikube - Get service URL
+minikube service student-performance-service --url
+
+# Test the API
+curl http://<EXTERNAL-IP>:80/health
+curl http://<EXTERNAL-IP>:80/model/info
+
+
+================================================================================
+OPTIONAL: CLEANUP COMMANDS
+================================================================================
+
+# Delete resources
+kubectl delete -f service.yaml
+kubectl delete -f deployment.yaml
+
+# Delete namespace (if created)
+kubectl delete namespace student-performance
+
+
+================================================================================
+SCREENSHOT CHECKLIST
+================================================================================
+
+✓ 1. docker build command output
+✓ 2. docker images showing tagged images
+✓ 3. docker login success
+✓ 4. docker push progress
+✓ 5. Docker Hub website showing repository
+✓ 6. deployment.yaml file content
+✓ 7. service.yaml file content
+✓ 8. kubectl cluster-info output
+✓ 9. kubectl create namespace output
+✓ 10. kubectl apply deployment output
+✓ 11. kubectl get pods showing 3 running pods
+✓ 12. kubectl apply service output
+✓ 13. kubectl get services showing LoadBalancer
+✓ 14. Browser showing API homepage
+✓ 15. curl /health endpoint response
+✓ 16. kubectl logs showing Flask startup
+✓ 17. kubectl get pods -o wide showing all replicas
+
+================================================================================
+
